@@ -1,4 +1,4 @@
-use moka::future::{Cache, CacheBuilder};
+use moka::future::Cache;
 use std::{hash::Hash, sync::Arc, time::Duration};
 
 pub fn new_moka_cache<T: Eq + Hash + Send + Sync + 'static, U: Clone + Send + Sync + 'static>(

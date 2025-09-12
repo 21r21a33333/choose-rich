@@ -20,3 +20,17 @@ garden = { git = "https://github.com/catalogfi/garden.rs.git", rev = "0c8e7db659
 ] }
 reqwest = {version="0.12.23", features = ["json"] }
 axum-test = "18.1.0"
+tracing = "0.1.41"
+tracing-subscriber = "0.3.20"
+sqlx = {version="0.8.6", features = [
+    "runtime-tokio",
+    "tls-native-tls",
+    "postgres",
+    "derive",
+    "macros",
+    "bigdecimal",
+    "chrono",
+    "json",
+]}
+
+

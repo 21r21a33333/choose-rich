@@ -12,6 +12,7 @@ pub struct AppState {
     pub sessions: Arc<Cache<Service, Arc<Cache<String, serde_json::Value>>>>,
 }
 
+
 impl Default for AppState {
     fn default() -> Self {
         Self {
