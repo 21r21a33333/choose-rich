@@ -1,6 +1,7 @@
 use crate::{auth::AuthLayer, mines::router, server::AppState, store::Store};
 use moka::future::Cache;
 use std::sync::Arc;
+mod apex;
 mod auth;
 mod mines;
 mod primitives;

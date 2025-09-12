@@ -6,6 +6,7 @@ use crate::store::Store;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Service {
     Mines,
+    Apex,
 }
 
 // Application state
