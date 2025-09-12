@@ -1,15 +1,37 @@
-use serde::{Deserialize, Serialize};
-use sqlx::{Error, Pool, Postgres, Result};
-
 use crate::store::User;
+use sqlx::{Pool, Postgres, Result};
 
 pub struct Store {
     pool: Pool<Postgres>,
 }
 
 impl Store {
-    pub fn new(pool: Pool<Postgres>) -> Self {
-        Store { pool }
+    /// Run database migration to create the users table if it does not exist.
+    pub async fn migrate(&self) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS users (
+                user_id SERIAL PRIMARY KEY,
+                username VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                pk VARCHAR(255) NOT NULL,
+                btc_addr VARCHAR(255) NOT NULL,
+                evm_addr VARCHAR(255) NOT NULL,
+                booky_balance DECIMAL(18, 2) NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        //create indexes
+        self.create_indexes().await?;
+        Ok(())
+    }
+    pub async fn new(pool: Pool<Postgres>) -> Result<Self> {
+        let store = Store { pool };
+        store.migrate().await?;
+        Ok(store)
     }
 
     // Create a new user
@@ -71,7 +93,7 @@ impl Store {
         .bind(&user.btc_addr)
         .bind(&user.evm_addr)
         .bind(user.booky_balance)
-        .bind(user.user_id)
+        .bind(user.user_id.to_string())
         .fetch_one(&self.pool)
         .await
     }

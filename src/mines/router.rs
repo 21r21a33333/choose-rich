@@ -312,16 +312,6 @@ pub async fn router(state: Arc<AppState>) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{
-        body::Body,
-        http::{Request, StatusCode},
-    };
-    use serde_json::json;
-
-    fn create_test_state() -> Arc<AppState> {
-        Arc::new(Default::default())
-    }
-
     #[test]
     fn test_game_session_new_valid() {
         let result = GameSession::new(100, 25, 5);
@@ -540,15 +530,4 @@ mod tests {
         }
     }
     // Start a test server and write tests using reqwest and tokio
-
-    use axum::{Router, response::Json, routing::get};
-    use reqwest::Client;
-    use std::net::{SocketAddr, TcpListener};
-    use std::time::Duration;
-    use tokio::task::JoinHandle;
-
-    // Builds the router with routes and state.
-    fn router(state: Arc<AppState>) -> Router {
-        router(state)
-    }
 }
