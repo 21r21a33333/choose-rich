@@ -75,6 +75,7 @@ pub struct CashoutResponse {
     pub src: u32,
     pub final_payout: u32,
     pub actions: HashMap<String, MoveAction>,
+    pub bomb_blocks: Vec<u32>,
     pub session_status: SessionStatus,
 }
 
@@ -188,15 +189,19 @@ impl GameSession {
             src: self.src,
             final_payout,
             actions: self.actions.clone(),
+            bomb_blocks: self.mine_positions.iter().copied().collect(),
             session_status: self.status.clone(),
         })
     }
 
     fn calculate_multiplier(&self, safe_picks: u32) -> f64 {
+        const HOUSE_EDGE: f64 = 0.01; // 1% house edge
+        
         (0..safe_picks).fold(1.0, |acc, i| {
             let remaining = self.blocks - self.mines - i;
             if remaining > 0 {
-                acc * self.blocks as f64 / remaining as f64
+                // Apply house edge: multiply by (1 - house_edge) to reduce payouts
+                acc * (1.0 - HOUSE_EDGE) * self.blocks as f64 / remaining as f64
             } else {
                 acc
             }
@@ -363,7 +368,18 @@ mod tests {
         let mut session = GameSession::new(100, 25, 5).unwrap();
         for block in 1..=25 {
             let result = session.make_move(block);
-            assert!(result.is_ok());
+            if session.mine_positions.contains(&block) {
+                // If we hit a mine, the game should end and this should be the last move
+                assert!(result.is_ok());
+                let response = result.unwrap();
+                assert_eq!(response.session_status, SessionStatus::Ended);
+                break; // Game is over, no more moves possible
+            } else {
+                // Safe block, should succeed
+                assert!(result.is_ok());
+                let response = result.unwrap();
+                assert_eq!(response.session_status, SessionStatus::Active);
+            }
         }
     }
 
@@ -396,6 +412,11 @@ mod tests {
         assert_eq!(response.session_status, SessionStatus::Ended);
         assert!(response.final_payout > 0);
         assert_eq!(response.src, 100);
+        assert_eq!(response.bomb_blocks.len(), 5);
+        // Verify that all bomb blocks are included
+        for &bomb_block in &response.bomb_blocks {
+            assert!(session.mine_positions.contains(&bomb_block));
+        }
     }
 
     #[tokio::test]
@@ -459,6 +480,63 @@ mod tests {
 
             last_multiplier = current_multiplier;
             last_payout = current_payout;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_house_edge_implementation() {
+        let mut session = GameSession::new(100, 25, 5).unwrap();
+        
+        // Find a safe block to make a move
+        let safe_block = (1..=25)
+            .find(|&b| !session.mine_positions.contains(&b))
+            .unwrap();
+        
+        let result = session.make_move(safe_block).unwrap();
+        let multiplier = result.current_multiplier.unwrap();
+        
+        // With 1% house edge, the multiplier should be 99% of the theoretical value
+        // Theoretical multiplier for first safe pick: 25/20 = 1.25
+        // With house edge: 0.99 * 1.25 = 1.2375
+        let expected_multiplier = 0.99 * (25.0 / 20.0);
+        
+        assert!((multiplier - expected_multiplier).abs() < 0.0001, 
+                "Expected multiplier ~{}, got {}", expected_multiplier, multiplier);
+        
+        // Verify the payout is reduced by house edge
+        let expected_payout = (100.0 * expected_multiplier) as u32;
+        let actual_payout = result.potential_payout.unwrap();
+        
+        assert_eq!(actual_payout, expected_payout, 
+                  "Expected payout {}, got {}", expected_payout, actual_payout);
+    }
+
+    #[tokio::test]
+    async fn test_multiple_moves_house_edge() {
+        let mut session = GameSession::new(1000, 25, 5).unwrap();
+        
+        // Make several safe moves and verify house edge is applied consistently
+        let safe_blocks: Vec<u32> = (1..=25)
+            .filter(|&b| !session.mine_positions.contains(&b))
+            .take(3)
+            .collect();
+        
+        for (i, &block) in safe_blocks.iter().enumerate() {
+            let result = session.make_move(block).unwrap();
+            let multiplier = result.current_multiplier.unwrap();
+            
+            // Calculate expected multiplier with house edge
+            let safe_picks = (i + 1) as u32;
+            let remaining_safe = 25 - 5 - i as u32;
+            let theoretical_multiplier = (0..safe_picks).fold(1.0, |acc, j| {
+                let remaining = 25 - 5 - j;
+                acc * 25.0 / remaining as f64
+            });
+            let expected_multiplier = theoretical_multiplier * 0.99_f64.powi(safe_picks as i32);
+            
+            assert!((multiplier - expected_multiplier).abs() < 0.0001,
+                   "Move {}: Expected multiplier ~{}, got {}", 
+                   i + 1, expected_multiplier, multiplier);
         }
     }
     // Start a test server and write tests using reqwest and tokio
