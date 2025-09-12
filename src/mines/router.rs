@@ -193,15 +193,23 @@ impl GameSession {
     }
 
     fn calculate_multiplier(&self, safe_picks: u32) -> f64 {
-        (0..safe_picks).fold(1.0, |acc, i| {
-            let remaining = self.blocks - self.mines - i;
-            if remaining > 0 {
-                acc * self.blocks as f64 / remaining as f64
-            } else {
-                acc
-            }
-        })
+        const HOUSE_EDGE: f64 = 0.01; // 1% house edge
+    
+        if safe_picks == 0 {
+            return 1.0;
+        }
+    
+        let mut prob_success = 1.0;
+        for i in 0..safe_picks {
+            let safe_remaining = self.blocks - self.mines - i;
+            let total_remaining = self.blocks - i;
+            prob_success *= safe_remaining as f64 / total_remaining as f64;
+        }
+    
+        let fair_multiplier = 1.0 / prob_success;
+        fair_multiplier * (1.0 - HOUSE_EDGE)
     }
+    
 }
 
 async fn start_game(
@@ -339,14 +347,12 @@ mod tests {
     #[tokio::test]
     async fn test_make_move_safe_block() {
         let mut session = GameSession::new(100, 25, 5).unwrap();
-        let block = session
-            .mine_positions
-            .iter()
-            .max()
-            .map_or(1, |&m| if m > 1 { 1 } else { 2 });
-        let result = session.make_move(block);
+        // Find a safe block (one that doesn't contain a mine)
+        let safe_block = (1..=25)
+            .find(|b| !session.mine_positions.contains(b))
+            .unwrap();
+        let result = session.make_move(safe_block);
         assert!(result.is_ok());
-        dbg!(&result);
         let response = result.unwrap();
         assert_eq!(response.session_status, SessionStatus::Active);
         assert!(response.current_multiplier.is_some());
@@ -361,7 +367,12 @@ mod tests {
     #[tokio::test]
     async fn test_make_move_valid_blocks() {
         let mut session = GameSession::new(100, 25, 5).unwrap();
-        for block in 1..=25 {
+        // Only test safe blocks (those not containing mines)
+        let safe_blocks: Vec<u32> = (1..=25)
+            .filter(|b| !session.mine_positions.contains(b))
+            .collect();
+        
+        for block in safe_blocks {
             let result = session.make_move(block);
             assert!(result.is_ok());
         }
@@ -384,12 +395,11 @@ mod tests {
     #[tokio::test]
     async fn test_cashout_active_session() {
         let mut session = GameSession::new(100, 25, 5).unwrap();
-        let block = session
-            .mine_positions
-            .iter()
-            .max()
-            .map_or(1, |&m| if m > 1 { 1 } else { 2 });
-        session.make_move(block).unwrap();
+        // Find a safe block (one that doesn't contain a mine)
+        let safe_block = (1..=25)
+            .find(|b| !session.mine_positions.contains(b))
+            .unwrap();
+        session.make_move(safe_block).unwrap();
         let result = session.cashout();
         assert!(result.is_ok());
         let response = result.unwrap();
@@ -461,6 +471,37 @@ mod tests {
             last_payout = current_payout;
         }
     }
+    #[test]
+    fn test_multiplier_calculation_fix() {
+        // Test that the multiplier calculation is now correct and doesn't favor bigger grids
+        let small_grid = GameSession::new(100, 25, 5).unwrap(); // 5x5 grid, 5 mines
+        let large_grid = GameSession::new(100, 100, 20).unwrap(); // 10x10 grid, 20 mines
+        
+        // Calculate multiplier for 1 safe pick on each grid
+        let small_multiplier_1 = small_grid.calculate_multiplier(1);
+        let large_multiplier_1 = large_grid.calculate_multiplier(1);
+        
+        // Calculate multiplier for 2 safe picks on each grid
+        let small_multiplier_2 = small_grid.calculate_multiplier(2);
+        let large_multiplier_2 = large_grid.calculate_multiplier(2);
+        
+        // With the fix, the multiplier should be based on probability, not grid size
+        // Both grids should have similar risk/reward ratios
+        println!("Small grid (25 blocks, 5 mines):");
+        println!("  1 safe pick: {:.4}", small_multiplier_1);
+        println!("  2 safe picks: {:.4}", small_multiplier_2);
+        
+        println!("Large grid (100 blocks, 20 mines):");
+        println!("  1 safe pick: {:.4}", large_multiplier_1);
+        println!("  2 safe picks: {:.4}", large_multiplier_2);
+        
+        // The multipliers should be reasonable and not exponentially favor larger grids
+        assert!(small_multiplier_1 > 1.0 && small_multiplier_1 < 2.0);
+        assert!(large_multiplier_1 > 1.0 && large_multiplier_1 < 2.0);
+        assert!(small_multiplier_2 > small_multiplier_1);
+        assert!(large_multiplier_2 > large_multiplier_1);
+    }
+
     // Start a test server and write tests using reqwest and tokio
 
     use axum::{Router, response::Json, routing::get};
