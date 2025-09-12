@@ -1,4 +1,5 @@
 use crate::{auth::AuthLayer, mines::router, server::AppState, store::Store};
+use axum::{Router, routing::get};
 use moka::future::Cache;
 use std::sync::Arc;
 mod apex;
@@ -30,15 +31,20 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let mines_router = router(Arc::new(app_state))
-        .await
+    let apex_router = apex::router(Arc::new(app_state.clone()));
+    let mines_router = router(Arc::new(app_state)).await;
+    let app_router = Router::new()
+        .route("/", get(|| async { "Choose Rich API is running!" }))
+        .merge(apex_router)
+        .merge(mines_router)
         .layer(AuthLayer {
             expected_secret: "X-Server-secret".to_string(),
             jwt_secret: JWT_SECRET.to_string(),
         })
         .layer(cors);
+
     // serve this route in 0.0.0.0 : 5433
     let listener = tokio::net::TcpListener::bind("0.0.0.0:5433").await.unwrap();
     tracing::info!("server started at 0.0.0.0:5433");
-    axum::serve(listener, mines_router).await.unwrap();
+    axum::serve(listener, app_router).await.unwrap();
 }

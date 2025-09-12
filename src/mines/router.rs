@@ -121,7 +121,6 @@ async fn health_check() -> &'static str {
 
 pub async fn router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/", get(health_check))
         .route("/mines/start", post(start_game))
         .route("/mines/move", post(make_move))
         .route("/mines/cashout", post(cashout))

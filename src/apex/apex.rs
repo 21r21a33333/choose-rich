@@ -2,12 +2,7 @@ use crate::{
     primitives::new_moka_cache,
     server::{AppState, Service},
 };
-use axum::{
-    Router,
-    extract::State,
-    response::Json,
-    routing::{get, post},
-};
+use axum::{Router, extract::State, response::Json, routing::post};
 use garden::api::{
     bad_request, internal_error,
     primitives::{ApiResult, Response},
@@ -299,13 +294,8 @@ async fn make_choice(
     Ok(Response::ok(response))
 }
 
-async fn health_check() -> &'static str {
-    "Choose Original API is running!"
-}
-
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
-        .route("/", get(health_check))
         .route("/start", post(start_game))
         .route("/choose", post(make_choice))
         .with_state(state)
