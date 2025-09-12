@@ -5,6 +5,7 @@ use crate::{
 };
 use alloy::signers::local::PrivateKeySigner;
 use axum::{Json, extract::State};
+use bigdecimal::BigDecimal;
 use bitcoin::{Address, Network, PublicKey, key::Secp256k1, secp256k1::SecretKey};
 use garden::api::{
     bad_request, internal_error,
@@ -85,7 +86,6 @@ async fn register(
     let evm_addr = derive_evm_address(&pk).map_err(|_e| internal_error("Internal Error"))?;
     let btc_addr = derive_btc_address(&pk).map_err(|_e| internal_error("Internal Error"))?;
     let hashed_password = hash_password(&payload.pass);
-    let booky_balance = 0.0;
 
     // Create user
     let mut user = User {
@@ -95,7 +95,7 @@ async fn register(
         pk,
         btc_addr,
         evm_addr,
-        booky_balance,
+        booky_balance: BigDecimal::from(0),
     };
 
     let created_user = state
@@ -137,4 +137,263 @@ async fn login(
         .map_err(|_e| internal_error("Internal Error"))?;
 
     Ok(Response::ok(token))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        auth::{AuthRequest, Claims},
+        server::AppState,
+    };
+    use axum::{
+        Json,
+        body::Body,
+        extract::State,
+        http::{Request, StatusCode},
+    };
+    use axum_test::expect_json::uuid;
+    use bigdecimal::BigDecimal;
+    use jsonwebtoken::{DecodingKey, Validation, decode};
+    use std::sync::Arc;
+
+    // Helper function to create test app state
+    async fn create_test_app_state() -> Arc<AppState> {
+        Arc::new(AppState::default().await)
+    }
+
+    #[test]
+    fn test_generate_private_key() {
+        let pk1 = generate_private_key();
+        let pk2 = generate_private_key();
+
+        // Should generate 64 character hex strings (32 bytes)
+        assert_eq!(pk1.len(), 64);
+        assert_eq!(pk2.len(), 64);
+
+        // Should be valid hex
+        assert!(hex::decode(&pk1).is_ok());
+        assert!(hex::decode(&pk2).is_ok());
+
+        // Should be unique
+        assert_ne!(pk1, pk2);
+    }
+
+    #[test]
+    fn test_derive_evm_address() {
+        // Test with a known private key
+        let private_key = generate_private_key();
+        let result = derive_evm_address(&private_key);
+        assert!(result.is_ok());
+
+        let address = result.unwrap();
+        // EVM addresses should start with 0x and be 42 characters long
+        assert!(address.starts_with("0x"));
+        assert_eq!(address.len(), 42);
+
+        // make sure returns the same address on retry
+        let result = derive_evm_address(&private_key);
+        assert!(result.is_ok());
+
+        assert_eq!(address, result.unwrap())
+    }
+
+    #[test]
+    fn test_derive_evm_address_invalid() {
+        // Test with invalid hex
+        let result = derive_evm_address("invalid_hex");
+        assert!(result.is_err());
+
+        // Test with wrong length
+        let result = derive_evm_address("123456");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_derive_btc_address() {
+        // Test with a known private key
+        let private_key = &generate_private_key();
+        let result = derive_btc_address(private_key);
+        assert!(result.is_ok());
+
+        let address = result.unwrap();
+
+        // make sure returns the same address on retry
+        let result = derive_btc_address(private_key);
+        assert!(result.is_ok());
+
+        assert_eq!(address, result.unwrap())
+    }
+
+    #[test]
+    fn test_derive_btc_address_invalid() {
+        // Test with invalid hex
+        let result = derive_btc_address("invalid_hex");
+        assert!(result.is_err());
+
+        // Test with wrong length
+        let result = derive_btc_address("123456");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hash_password() {
+        let password = "test_password";
+        let hash1 = hash_password(password);
+        let hash2 = hash_password(password);
+
+        // Same password should produce same hash
+        assert_eq!(hash1, hash2);
+
+        // Hash should be 64 characters (SHA256)
+        assert_eq!(hash1.len(), 64);
+
+        // Different passwords should produce different hashes
+        let different_hash = hash_password("different_password");
+        assert_ne!(hash1, different_hash);
+    }
+
+    #[tokio::test]
+    async fn test_generate_jwt() {
+        let user_id = "test_user_123".to_string();
+        let secret = "test_secret";
+
+        let token = generate_jwt(user_id.clone(), secret).await;
+        assert!(token.is_ok());
+
+        let token = token.unwrap();
+
+        // Verify the token can be decoded
+        let token_data = decode::<Claims>(
+            &token,
+            &DecodingKey::from_secret(secret.as_ref()),
+            &Validation::default(),
+        );
+
+        assert!(token_data.is_ok());
+        let claims = token_data.unwrap().claims;
+        assert_eq!(claims.sub, user_id);
+    }
+    #[tokio::test]
+    async fn test_register_success() {
+        let state = create_test_app_state().await;
+        // generate a random uuid
+        let user_id = uuid::Uuid::new_v4().to_string();
+        let auth_request = AuthRequest {
+            username: user_id.clone(),
+            pass: "testpassword".to_string(),
+        };
+
+        let result = register(State(state), Json(auth_request)).await;
+        assert!(result.is_ok());
+
+        let response = result.clone().unwrap();
+        // Should return a JWT token
+        assert!(!response.result.clone().unwrap().is_empty());
+
+        // Verify the token is valid
+        let token_data = decode::<Claims>(
+            &response.result.unwrap(),
+            &DecodingKey::from_secret("secret".as_ref()),
+            &Validation::default(),
+        );
+        dbg!(&token_data);
+        assert!(token_data.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_register_user_already_exists() {
+        let state = create_test_app_state().await;
+
+        // First registration
+        let user_id = uuid::Uuid::new_v4().to_string();
+        let auth_request = AuthRequest {
+            username: user_id.clone(),
+            pass: "testpassword".to_string(),
+        };
+        let result1 = register(State(state.clone()), Json(auth_request.clone())).await;
+        assert!(result1.is_ok());
+
+        // Second registration with same username
+        let result2 = register(State(state), Json(auth_request)).await;
+        assert!(result2.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_login_success() {
+        let state = create_test_app_state().await;
+        let user_id = uuid::Uuid::new_v4().to_string();
+
+        let auth_request = AuthRequest {
+            username: user_id.clone(),
+            pass: "testpassword".to_string(),
+        };
+
+        // First register the user
+        let _ = register(State(state.clone()), Json(auth_request.clone())).await;
+
+        // Then try to login
+        let result = login(State(state), Json(auth_request)).await;
+        assert!(result.is_ok());
+
+        let response = result.unwrap();
+        // Should return a JWT token
+        assert!(!response.result.clone().unwrap().is_empty());
+
+        // Verify the token is valid
+        let token_data = decode::<Claims>(
+            &response.result.unwrap(),
+            &DecodingKey::from_secret("secret".as_ref()),
+            &Validation::default(),
+        );
+        assert!(token_data.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_login_invalid_username() {
+        let state = create_test_app_state().await;
+        let auth_request = AuthRequest {
+            username: "nonexistent_user".to_string(),
+            pass: "testpassword".to_string(),
+        };
+
+        let result = login(State(state), Json(auth_request)).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_login_invalid_password() {
+        let state = create_test_app_state().await;
+        let register_request = AuthRequest {
+            username: "testuser".to_string(),
+            pass: "correct_password".to_string(),
+        };
+
+        // Register user
+        let _ = register(State(state.clone()), Json(register_request)).await;
+
+        // Try to login with wrong password
+        let login_request = AuthRequest {
+            username: "testuser".to_string(),
+            pass: "wrong_password".to_string(),
+        };
+
+        let result = login(State(state), Json(login_request)).await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_key_generation_consistency() {
+        // Generate a private key and verify both BTC and EVM addresses can be derived
+        let pk = generate_private_key();
+
+        let evm_result = derive_evm_address(&pk);
+        let btc_result = derive_btc_address(&pk);
+
+        assert!(evm_result.is_ok());
+        assert!(btc_result.is_ok());
+
+        // Verify addresses are different
+        assert_ne!(evm_result.unwrap(), btc_result.unwrap());
+    }
 }

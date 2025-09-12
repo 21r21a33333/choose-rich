@@ -1,16 +1,3 @@
-use std::sync::Arc;
-
-use axum::{
-    Json, Router,
-    extract::State,
-    routing::{get, post},
-};
-use garden::api::{
-    bad_request, internal_error,
-    primitives::{ApiResult, Response},
-};
-use serde_json::to_value;
-
 use crate::{
     mines::{
         CashoutRequest, CashoutResponse, GameSession, MoveRequest, MoveResponse, SESSION_TTL,
@@ -19,12 +6,24 @@ use crate::{
     primitives::new_moka_cache,
     server::{AppState, Service},
 };
+use axum::{
+    Extension, Json, Router,
+    extract::State,
+    routing::{get, post},
+};
+use garden::api::{
+    bad_request, internal_error,
+    primitives::{ApiResult, Response},
+};
+use serde_json::to_value;
+use std::sync::Arc;
 
 async fn start_game(
     State(state): State<Arc<AppState>>,
+    Extension(user_addr): Extension<String>,
     Json(payload): Json<StartGameRequest>,
 ) -> ApiResult<StartGameResponse> {
-    let session = GameSession::new(payload.amount, payload.blocks, payload.mines)
+    let session = GameSession::new(payload.amount, payload.blocks, payload.mines, user_addr)
         .map_err(|e| bad_request(&e.to_string()))?;
     let response = StartGameResponse {
         id: session.id.clone(),
@@ -55,6 +54,7 @@ async fn start_game(
 
 async fn make_move(
     State(state): State<Arc<AppState>>,
+    Extension(user_addr): Extension<String>,
     Json(payload): Json<MoveRequest>,
 ) -> ApiResult<MoveResponse> {
     let service_state = state
@@ -69,7 +69,7 @@ async fn make_move(
         .ok_or(bad_request("Session not found"))?;
 
     let response = session
-        .make_move(payload.block)
+        .make_move(payload.block, user_addr)
         .map_err(|e| bad_request(&e.to_string()))?;
     service_state
         .insert(
@@ -78,11 +78,17 @@ async fn make_move(
         )
         .await;
 
+    if response.session_status == SessionStatus::Ended {
+        // if the session is ended, delete the session
+        // state.store.upda
+    }
+
     Ok(Response::ok(response))
 }
 
 async fn cashout(
     State(state): State<Arc<AppState>>,
+    Extension(user_addr): Extension<String>,
     Json(payload): Json<CashoutRequest>,
 ) -> ApiResult<CashoutResponse> {
     let service_state = state
@@ -96,7 +102,9 @@ async fn cashout(
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .ok_or(bad_request("Session not found"))?;
 
-    let response = session.cashout().map_err(|e| bad_request(&e.to_string()))?;
+    let response = session
+        .cashout(user_addr)
+        .map_err(|e| bad_request(&e.to_string()))?;
     service_state
         .insert(
             session.id.clone(),
@@ -125,7 +133,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_game_session_new_valid() {
-        let result = GameSession::new(100, 25, 5);
+        let result = GameSession::new(100, 25, 5, "string".to_string());
         assert!(result.is_ok());
         let session = result.unwrap();
         assert_eq!(session.src, 100);
@@ -137,18 +145,18 @@ mod tests {
 
     #[test]
     fn test_game_session_new_invalid_blocks() {
-        let result = GameSession::new(100, 7, 2);
+        let result = GameSession::new(100, 7, 2, "string".to_string());
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "Invalid Blocks");
     }
 
     #[tokio::test]
     async fn test_make_move_safe_block() {
-        let mut session = GameSession::new(100, 25, 5).unwrap();
+        let mut session = GameSession::new(100, 25, 5, "string".to_string()).unwrap();
         let block = (1..=session.blocks)
             .find(|b| !session.mine_positions.contains(b))
             .unwrap();
-        let result = session.make_move(block);
+        let result = session.make_move(block, "string".to_string());
         assert!(result.is_ok());
         dbg!(&result);
         let response = result.unwrap();
@@ -164,9 +172,9 @@ mod tests {
     // is increasing
     #[tokio::test]
     async fn test_make_move_valid_blocks() {
-        let mut session = GameSession::new(100, 25, 5).unwrap();
+        let mut session = GameSession::new(100, 25, 5, "string".to_string()).unwrap();
         for block in 1..=25 {
-            let result = session.make_move(block);
+            let result = session.make_move(block, "string".to_string());
             if session.mine_positions.contains(&block) {
                 // If we hit a mine, the game should end and this should be the last move
                 assert!(result.is_ok());
@@ -184,9 +192,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_make_move_mine_block() {
-        let mut session = GameSession::new(100, 25, 5).unwrap();
+        let mut session = GameSession::new(100, 25, 5, "string".to_string()).unwrap();
         let block = *session.mine_positions.iter().next().unwrap();
-        let result = session.make_move(block);
+        let result = session.make_move(block, "string".to_string());
         assert!(result.is_ok());
         let response = result.unwrap();
         assert_eq!(response.session_status, SessionStatus::Ended);
@@ -198,13 +206,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_cashout_active_session() {
-        let mut session = GameSession::new(100, 25, 5).unwrap();
+        let mut session = GameSession::new(100, 25, 5, "string".to_string()).unwrap();
         // take a block not in mine block
         let block = (1..=session.blocks)
             .find(|b| !session.mine_positions.contains(b))
             .unwrap();
-        session.make_move(block).unwrap();
-        let result = session.cashout();
+        session.make_move(block, "string".to_string()).unwrap();
+        let result = session.cashout("string".to_string());
         assert!(result.is_ok());
         let response = result.unwrap();
         assert_eq!(response.session_status, SessionStatus::Ended);
@@ -219,7 +227,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_iterate_valid_blocks_increasing_payout_multiplier() {
-        let mut session = GameSession::new(100, 25, 5).unwrap();
+        let mut session = GameSession::new(100, 25, 5, "string".to_string()).unwrap();
         let mut last_multiplier = 1.0;
         let mut last_payout = 100;
 
@@ -230,7 +238,7 @@ mod tests {
 
         // Iterate through safe blocks up to a reasonable limit to avoid excessive moves
         for &block in safe_blocks.iter().take(5) {
-            let result = session.make_move(block);
+            let result = session.make_move(block, "string".to_string());
             assert!(
                 result.is_ok(),
                 "Move should be successful for block {}",
@@ -283,14 +291,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_house_edge_implementation() {
-        let mut session = GameSession::new(100, 25, 5).unwrap();
+        let mut session = GameSession::new(100, 25, 5, "string".to_string()).unwrap();
 
         // Find a safe block to make a move
         let safe_block = (1..=25)
             .find(|&b| !session.mine_positions.contains(&b))
             .unwrap();
 
-        let result = session.make_move(safe_block).unwrap();
+        let result = session.make_move(safe_block, "string".to_string()).unwrap();
         let multiplier = result.current_multiplier.unwrap();
 
         // With 1% house edge, the multiplier should be 99% of the theoretical value
@@ -318,7 +326,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_multiple_moves_house_edge() {
-        let mut session = GameSession::new(1000, 25, 5).unwrap();
+        let mut session = GameSession::new(1000, 25, 5, "string".to_string()).unwrap();
 
         // Make several safe moves and verify house edge is applied consistently
         let safe_blocks: Vec<u32> = (1..=25)
@@ -327,7 +335,7 @@ mod tests {
             .collect();
 
         for (i, &block) in safe_blocks.iter().enumerate() {
-            let result = session.make_move(block).unwrap();
+            let result = session.make_move(block, "string".to_string()).unwrap();
             let multiplier = result.current_multiplier.unwrap();
 
             // Calculate expected multiplier with house edge

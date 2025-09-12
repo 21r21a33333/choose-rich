@@ -1,6 +1,7 @@
 mod db_store;
 pub use db_store::*;
 use serde::{Deserialize, Serialize};
+use sqlx::types::BigDecimal;
 
 #[derive(Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct User {
@@ -10,7 +11,7 @@ pub struct User {
     pub pk: String,
     pub btc_addr: String,
     pub evm_addr: String,
-    pub booky_balance: f64,
+    pub booky_balance: BigDecimal,
 }
 
 impl User {
@@ -21,7 +22,7 @@ impl User {
         pk: String,
         btc_addr: String,
         evm_addr: String,
-        booky_balance: f64,
+        booky_balance: BigDecimal,
     ) -> Self {
         Self {
             user_id, // Will be set by DB

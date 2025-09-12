@@ -68,6 +68,7 @@ pub struct CashoutResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameSession {
     pub id: String,
+    pub user_id: String,
     pub src: u32,
     pub blocks: u32,
     pub mines: u32,
@@ -85,7 +86,7 @@ pub enum SessionStatus {
 }
 
 impl GameSession {
-    pub fn new(src: u32, blocks: u32, mines: u32) -> eyre::Result<Self> {
+    pub fn new(src: u32, blocks: u32, mines: u32, user_id: String) -> eyre::Result<Self> {
         if blocks.isqrt() * blocks.isqrt() != blocks {
             return Err(eyre::eyre!("Invalid Blocks"));
         }
@@ -100,6 +101,7 @@ impl GameSession {
             id: Uuid::new_v4().to_string(),
             src,
             blocks,
+            user_id,
             mines,
             mine_positions,
             revealed_blocks: HashSet::new(),
@@ -109,7 +111,11 @@ impl GameSession {
         })
     }
 
-    pub fn make_move(&mut self, block: u32) -> eyre::Result<MoveResponse> {
+    pub fn make_move(&mut self, block: u32, user_id: String) -> eyre::Result<MoveResponse> {
+        if self.user_id != user_id {
+            return Err(eyre::eyre!("User ID does not match"));
+        }
+
         if self.status != SessionStatus::Active {
             return Err(eyre::eyre!("Session is not active"));
         }
@@ -163,7 +169,11 @@ impl GameSession {
         })
     }
 
-    pub fn cashout(&mut self) -> eyre::Result<CashoutResponse> {
+    pub fn cashout(&mut self, user_id: String) -> eyre::Result<CashoutResponse> {
+        if self.user_id != user_id {
+            return Err(eyre::eyre!("User ID does not match"));
+        }
+
         if self.status != SessionStatus::Active {
             return Err(eyre::eyre!("Session is not active"));
         }
