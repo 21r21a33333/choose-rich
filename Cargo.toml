@@ -1,0 +1,22 @@
+[package]
+name = "choose-rich"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = {version = "0.7",features = ["macros"]}
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+rand = "0.8"
+moka = { version = "0.12.10", features = ["future"] }
+async-trait = "0.1.89"
+eyre = "0.6.12"
+garden = { git = "https://github.com/catalogfi/garden.rs.git", rev = "0c8e7db659d74f806b197d3ff1180ab24d6751fc", features = [
+    "api"
+] }
+reqwest = {version="0.12.23", features = ["json"] }
+axum-test = "18.1.0"
