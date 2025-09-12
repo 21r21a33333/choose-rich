@@ -75,6 +75,7 @@ pub struct CashoutResponse {
     pub src: u32,
     pub final_payout: u32,
     pub actions: HashMap<String, MoveAction>,
+    pub bomb_blocks: Vec<u32>,
     pub session_status: SessionStatus,
 }
 
@@ -188,6 +189,7 @@ impl GameSession {
             src: self.src,
             final_payout,
             actions: self.actions.clone(),
+            bomb_blocks: self.mine_positions.iter().copied().collect(),
             session_status: self.status.clone(),
         })
     }
@@ -410,6 +412,11 @@ mod tests {
         assert_eq!(response.session_status, SessionStatus::Ended);
         assert!(response.final_payout > 0);
         assert_eq!(response.src, 100);
+        assert_eq!(response.bomb_blocks.len(), 5);
+        // Verify that all bomb blocks are included
+        for &bomb_block in &response.bomb_blocks {
+            assert!(session.mine_positions.contains(&bomb_block));
+        }
     }
 
     #[tokio::test]
