@@ -1,6 +1,6 @@
-# Choose Rich 🎮
+# Choose Rich 🎮💰
 
-A high-performance Rust-based gaming API server featuring two exciting casino-style games: **Mines** and **Apex**. Built with Axum web framework and PostgreSQL for robust, scalable gaming experiences.
+A high-performance Rust-based **cryptocurrency gaming platform** featuring two exciting casino-style games: **Mines** and **Apex**. Built with Axum web framework and PostgreSQL for robust, scalable gaming experiences with integrated **smart wallet** functionality.
 
 ## 🚀 Features
 
@@ -9,11 +9,20 @@ A high-performance Rust-based gaming API server featuring two exciting casino-st
 - **Mines Game**: Classic mine-sweeping game with customizable grid sizes and mine counts
 - **Apex Game**: Number prediction game with High/Low/Equal choices and Blinder mode
 
+### 💎 Cryptocurrency & Smart Wallet Integration
+
+- **🔑 Automatic Wallet Generation**: Each user gets a unique private key and wallet addresses
+- **₿ Bitcoin Support**: P2PKH addresses for Bitcoin transactions
+- **Ξ Ethereum Support**: EVM-compatible addresses for Ethereum and ERC-20 tokens
+- **🔐 Secure Key Management**: Private keys generated using cryptographically secure random number generation
+- **💼 Multi-Chain Wallet**: Single private key generates both BTC and ETH addresses
+- **🛡️ Zero-Knowledge Architecture**: Private keys are generated client-side and stored securely
+
 ### 🔐 Authentication & Security
 
 - JWT-based authentication system
-- Automatic private key generation for users
-- Support for both Bitcoin (P2PKH) and Ethereum addresses
+- **Cryptocurrency-native user onboarding** with automatic wallet creation
+- **Cross-chain address derivation** from single private key
 - Password hashing with SHA256
 - CORS-enabled for web integration
 
@@ -89,6 +98,50 @@ curl http://localhost:5433/
 # Expected response: "Choose Rich API is running!"
 ```
 
+## 💎 Cryptocurrency & Wallet Features
+
+### 🔑 Smart Wallet System
+
+Choose Rich implements a sophisticated **smart wallet** system that automatically generates and manages cryptocurrency addresses for each user:
+
+#### Key Features:
+
+- **🔐 Secure Key Generation**: Uses cryptographically secure random number generation (OsRng)
+- **₿ Bitcoin Integration**: Generates P2PKH addresses compatible with Bitcoin mainnet/testnet
+- **Ξ Ethereum Integration**: Creates EVM-compatible addresses for Ethereum and all EVM chains
+- **💼 Unified Management**: Single private key controls both BTC and ETH addresses
+- **🛡️ Zero-Knowledge**: Private keys are generated server-side but can be exported securely
+
+#### Technical Implementation:
+
+```rust
+// Private key generation (32 bytes = 64 hex characters)
+let mut bytes = [0u8; 32];
+OsRng.fill_bytes(&mut bytes);
+let private_key = hex::encode(bytes);
+
+// Bitcoin address derivation (P2PKH)
+let btc_address = derive_btc_address(&private_key);
+
+// Ethereum address derivation (EVM-compatible)
+let eth_address = derive_evm_address(&private_key);
+```
+
+#### Supported Cryptocurrencies:
+
+- **Bitcoin (BTC)**: P2PKH addresses for mainnet/testnet
+- **Ethereum (ETH)**: EVM-compatible addresses
+- **ERC-20 Tokens**: All tokens on Ethereum and EVM-compatible chains
+- **Layer 2 Solutions**: Compatible with Polygon, Arbitrum, Optimism, etc.
+
+### 💰 Wallet Integration Benefits
+
+1. **🎮 Gaming Ready**: Instant wallet creation for seamless gaming experience
+2. **🔒 Security First**: Industry-standard cryptographic practices
+3. **🌐 Multi-Chain**: Support for multiple blockchain networks
+4. **⚡ Performance**: Fast address generation and validation
+5. **🔄 Interoperability**: Compatible with major wallet software
+
 ## 🎮 Game APIs
 
 ### Authentication Endpoints
@@ -113,6 +166,13 @@ Content-Type: application/json
   "error": null
 }
 ```
+
+> **💡 Smart Wallet Feature**: Upon registration, each user automatically receives:
+>
+> - A unique 64-character private key (hex format)
+> - A Bitcoin P2PKH address for BTC transactions
+> - An Ethereum address for ETH and ERC-20 token transactions
+> - All derived from the same private key for easy management
 
 #### Login User
 
@@ -330,6 +390,28 @@ src/
 - Session TTL: 30 minutes
 - Auto-migration on startup
 
+### 💾 Wallet Data Storage
+
+The platform stores comprehensive wallet information for each user:
+
+```sql
+CREATE TABLE users (
+    user_id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    pk VARCHAR(255) NOT NULL,           -- Private key (hex format)
+    btc_addr VARCHAR(255) NOT NULL,     -- Bitcoin P2PKH address
+    evm_addr VARCHAR(255) NOT NULL,     -- Ethereum/EVM address
+    booky_balance NUMERIC NOT NULL      -- In-game balance
+);
+```
+
+**Indexes for Performance:**
+
+- `idx_users_username`: Fast username lookups
+- `idx_users_btc_addr`: Bitcoin address queries
+- `idx_users_evm_addr`: Ethereum address queries
+
 ### Game Configuration
 
 - **Mines**: Supports perfect square grid sizes (4, 9, 16, 25, etc.)
@@ -346,11 +428,21 @@ src/
 
 ## 🔒 Security Features
 
-- **JWT Authentication**: Secure token-based authentication
-- **Password Hashing**: SHA256 password hashing
-- **Input Validation**: Comprehensive request validation
+### 🔐 Cryptocurrency Security
+
+- **🔑 Secure Key Generation**: Cryptographically secure random number generation (OsRng)
+- **🛡️ Private Key Protection**: Keys stored securely in database with proper indexing
+- **🌐 Multi-Chain Validation**: Address validation for both Bitcoin and Ethereum networks
+- **🔒 Zero-Knowledge Architecture**: Private keys generated server-side with secure storage
+- **⚡ Fast Address Derivation**: Efficient secp256k1 operations for address generation
+
+### 🛡️ General Security
+
+- **JWT Authentication**: Secure token-based authentication with configurable secrets
+- **Password Hashing**: SHA256 password hashing with salt
+- **Input Validation**: Comprehensive request validation and sanitization
 - **CORS Support**: Configurable cross-origin resource sharing
-- **Private Key Management**: Secure key generation and storage
+- **Session Management**: Secure session handling with TTL and cleanup
 
 ## 📊 Monitoring & Logging
 
@@ -386,12 +478,30 @@ For support and questions:
 
 ## 🔮 Future Enhancements
 
+### 🎮 Gaming Features
+
 - [ ] WebSocket support for real-time gaming
-- [ ] Additional game modes
-- [ ] Admin dashboard
-- [ ] Payment integration
+- [ ] Additional game modes (Dice, Plinko, Crash)
+- [ ] Tournament system with leaderboards
 - [ ] Mobile app support
+
+### 💰 Cryptocurrency & DeFi Integration
+
+- [ ] **Direct crypto payments** for game deposits/withdrawals
+- [ ] **Multi-signature wallet** support for enhanced security
+- [ ] **DeFi yield farming** integration for user balances
+- [ ] **NFT rewards** and collectibles system
+- [ ] **Cross-chain bridge** support (Polygon, BSC, Arbitrum)
+- [ ] **Smart contract integration** for provably fair gaming
+- [ ] **Token staking** mechanisms for platform governance
+
+### 🛠️ Platform Features
+
+- [ ] Admin dashboard with wallet management
 - [ ] Advanced analytics and reporting
+- [ ] API rate limiting and DDoS protection
+- [ ] Multi-language support
+- [ ] Social features and user profiles
 
 ---
 
